@@ -5,6 +5,45 @@ from typing import Optional
 from pydantic import BaseModel
 
 app = FastAPI()
+import sqlite3
+
+
+
+conn = sqlite3.connect(':memory:') 
+
+cur = conn.cursor()
+
+# Create User table
+cur.execute('''CREATE TABLE users
+    ( user_id int AUTO_INCREMENT,
+  username varchar(25)  NOT NULL UNIQUE,
+  name varchar(25) NOT NULL,
+  email varchar(25) NOT NULL,
+  password varchar(30) NOT NULL,
+  bitcoinAmount float(20) NOT NULL,
+  usdBalance float(20) NOT NULL,
+  createdAt timestamp NOT NULL,
+  updatedAt timestamp NULL,
+  PRIMARY KEY (user_id)
+  );''')
+
+# Create Crypto table.
+cur.execute('''CREATE TABLE crypto
+( name varchar(25) PRIMARY KEY,
+  
+  price float(20) NOT NULL,
+  updatedAt timestamp NULL
+
+  );''')
+
+# Save (commit) the changes.
+conn.commit()
+
+# Closing Connection.
+# conn.close()
+tables = list(cur.execute("select name from sqlite_master where type is 'table'"))
+print(tables)
+
 
 class User(BaseModel):
     name: str
@@ -17,19 +56,19 @@ class User(BaseModel):
     updatedAt: Optional[str] = None
 
 
-conn = sqlite3.connect(':memory:') 
 @app.get('/')
 async def test():
     return {'msg': 'hello'}
 
 @app.post("/users")
 async def signup(user: User):
-    import pdb; pdb.set_trace()
     # {
     # “name”: “Jon A”,
     # “username”: “jonjon”,
     # “email”: “jon@jmail.com”
     # }
+    # conn = sqlite3.connect(':memory:') 
+    global cur
     if user.name:
 
         name = user.name
@@ -54,6 +93,11 @@ async def signup(user: User):
     cur = conn.cursor()
     current_time = datetime.datetime.now().timestamp()
     # Insert a row of data
+
+    tables = list(cur.execute("select name from sqlite_master where type is 'table'"))
+    print(tables)
+
+
     cur.execute("""INSERT INTO users (name, username, email, password, bitcoinAmount, usdBalance, createdAt)
         VALUES ('{name}', '{username}' ,'{username}' ,'{password}' ,0 ,0 ,'{current_time}');""")
 

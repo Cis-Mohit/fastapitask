@@ -32,4 +32,6 @@ cur.execute('''CREATE TABLE crypto
 conn.commit()
 
 # Closing Connection.
-conn.close()
+# conn.close()
+tables = list(cur.execute("select name from sqlite_master where type is 'table'"))
+print(tables)
