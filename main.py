@@ -4,9 +4,20 @@ from fastapi import FastAPI
 import datetime
 from typing import Optional
 from pydantic import BaseModel
+import logging
+import json
+
+#Create and configure logger
+
+#Creating an object
 
 app = FastAPI()
 
+logging.basicConfig(filename="/var/log/fastapi.log",
+                        format='%(asctime)s %(message)s',
+                        filemode='w')
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
 
 conn = sqlite3.connect(':memory:')
 
@@ -25,6 +36,7 @@ cur.execute('''CREATE TABLE users
   updatedAt timestamp NULL,
   PRIMARY KEY (user_id)
   );''')
+# logger.info("Users table created in in-memory")
 
 
 # Create Crypto table.
@@ -35,6 +47,7 @@ cur.execute('''CREATE TABLE crypto
   updatedAt timestamp NULL
 
   );''')
+# logger.info("Crypto table created in in-memory")
 
 # Save (commit) the changes.
 conn.commit()
@@ -71,7 +84,6 @@ class User(BaseModel):
 class Crypto(BaseModel):
     """Crypto model to get data to functon."""
 
-    name: str
     price: Optional[float] = 100.0
 
 
@@ -88,10 +100,18 @@ class UpdateBitcoinBalance(BaseModel):
     action_type: str
     balance: float
 
+class UpdateUserDetail(BaseModel):
+    """Model to update user_detail"""
+    user_id:Optional[int]
+    name: str
+    email: str
+
 
 @app.post("/users")
 async def signup(user: User):
     """Api to signup user."""
+    
+    logger.info("Request recieved for signup with data:: user_id:{}, name:{}, username:{}, email:{}, password:{}".format(user.user_id, user.name, user.username, user.email, user.password))
     if user.name:
         name = user.name
     else:
@@ -126,7 +146,7 @@ async def signup(user: User):
 
     cur.execute("""INSERT INTO users (user_id, name, username, email, password, bitcoinAmount, usdBalance, createdAt)
         VALUES (?,?, ?, ?, ?, 0, 0, ?)""", (user_id, name, username, username, password, current_time))
-
+    logger.info("New user created with user_id: {} & username: {}".format(user.user_id, user.username))
 
     # Save (commit) the changes
     conn.commit()
@@ -138,28 +158,30 @@ async def signup(user: User):
     # conn.close()
 
     response = {'response': response}
-
+    # logger.info("Response sent for signup request with data:: {}".format(json.dump(response)))
     return response
 
 
 @app.get("/users/{id}")
 async def fetch_user(id):
-    
+
     global cur
+    # logger.info("Request recieved for fetch user api details with data:: id:{}".format(id))
     user_data = cur.execute("SELECT * FROM users WHERE user_id=?;", (id,)).fetchone()
     user_collumn = ('user_id', 'name', 'username', 'email', 'password', 'bitcoinAmount', 'usdBalance',
                     'createdAt', 'updatedAt')
     response = dict(zip(user_collumn, user_data))
 
     response = {'response': response}
-
+    # logger.info("Response sent for fetch user api request with data:: {}".format(json.dump(response)))
     return response
 
 
 @app.put("/users/{id}")
-async def update_user(user: User):
+async def update_user(id, user: UpdateUserDetail):
     """Fuction to update user details."""
     global cur
+    # logger.info("Request recieved for update user api with data:: name:{}, email:{}".format(user.name, user.email))
     user_id = id
     if user.name:
         name = user.name
@@ -183,14 +205,15 @@ async def update_user(user: User):
     response = dict(zip(user_collumn, user_data))
 
     response = {'response': response}
-
+    # logger.info("Response sent for update user api request with data:: {}".format(json.dump(response)))
     return response
 
 
 @app.post("/users/{id}/usd")
-async def user_usd_balance_update(usdbal: UpdateUsdBalance):
+async def user_usd_balance_update(id, usdbal: UpdateUsdBalance):
     """Fuction to sell and buy bitcoins."""
     global cur
+    # logger.info("Request recieved for user usd balance update api with data:: action_type:{}, balance:{}".format(usdbal.action_type, usdbal.balance))
     user_bal = cur.execute("SELECT usdBalance  FROM users WHERE user_id=?;", (id,)).fetchone()
     usdbalance = user_bal[0]
 
@@ -203,10 +226,10 @@ async def user_usd_balance_update(usdbal: UpdateUsdBalance):
         balance = usdbal.balance
     else:
         return {'status': False, 'code': 404, 'msg': 'Balance field required.'}
-    if action_type == '“deposit”':
+    if action_type == 'deposit':
         updated_balance = usdbalance + balance
 
-    elif action_type == '“withdraw”':
+    elif action_type == 'withdraw':
         if usdbalance < balance:
             return {'status': False, 'code': 404, 'msg': 'Not Sufficient balance'}
         else:
@@ -216,19 +239,22 @@ async def user_usd_balance_update(usdbal: UpdateUsdBalance):
         return {'status': False, 'code': 404, 'msg': 'Enter valid type field.'}
 
     current_time = datetime.datetime.now().timestamp()
-    cur.execute(""" UPDATE users SET usdBalance=?, updatedAt=? WHERE name='bitcoin';""", (
-        updated_balance, current_time))
+    cur.execute(""" UPDATE users SET usdBalance=?, updatedAt=? WHERE user_id=?""", (
+        updated_balance, current_time, id))
     # Save (commit) the changes.
     conn.commit()
     user_bal = cur.execute("SELECT usdBalance  FROM users WHERE user_id=?;", (id,)).fetchone()
     usdbalance = user_bal[0]
 
     response = {'usdbalance': usdbalance}
+    # logger.info("Response sent for user usd balance update api request with data:: {}".format(json.dump(response)))
     return response
 
 @app.post("/users/{id}/bitcoins")
-async def user_bitcoins_balance_update(bitcoinbal: UpdateBitcoinBalance):
+async def user_bitcoins_balance_update(id, bitcoinbal: UpdateBitcoinBalance):
     """Fuction to sell and buy bitcoins."""
+    global cur
+    # logger.info("Request recieved for user bitcoin balance update api with data:: action_type:{}, balance:{}".format(bitcoinbal.action_type, bitcoinbal.balance))
     user_bal = cur.execute("SELECT bitcoinAmount  FROM users WHERE user_id=?;", (id,)).fetchone()
     bitcoinbalance = user_bal[0]
 
@@ -255,15 +281,16 @@ async def user_bitcoins_balance_update(bitcoinbal: UpdateBitcoinBalance):
         return {'status': False, 'code': 404, 'msg': 'Enter valid type field.'}
 
     current_time = datetime.datetime.now().timestamp()
-    cur.execute(""" UPDATE users SET bitcoinAmount=?, updatedAt=? WHERE name='bitcoin';""", (
-        updated_balance, current_time))
+    cur.execute(""" UPDATE users SET bitcoinAmount=?, updatedAt=? WHERE user_id=?""", (
+        updated_balance, current_time, id))
 
     # Save (commit) the changes.
     conn.commit()
-    user_bal = cur.execute("SELECT usdBalance,bitcoinAmount  FROM users WHERE user_id=?;", (id,)).fetchone()
+    user_bal = cur.execute("SELECT bitcoinAmount  FROM users WHERE user_id=?;", (id,)).fetchone()
     bitcoinbalance = user_bal[0]
 
     response = {'bitcoinbalance': bitcoinbalance}
+    # logger.info("Response sent for user bitcoin balance update api request with data:: {}".format(json.dump(response)))
     return response
 
 
@@ -271,6 +298,7 @@ async def user_bitcoins_balance_update(bitcoinbal: UpdateBitcoinBalance):
 async def get_user_balance(id):
     """Get User current balance."""
     global cur
+    # logger.info("Request recieved for get use balance api with data:: id:{}".format(id))
     user_bal = cur.execute("SELECT usdBalance,bitcoinAmount  FROM users WHERE user_id=?;", (id,)).fetchone()
     crypto = cur.execute("SELECT price  FROM crypto WHERE name='bitcoin';").fetchone()
     bitcoin_price = crypto[0]
@@ -279,18 +307,21 @@ async def get_user_balance(id):
     total_bal = usdbal + bitcoinbal * bitcoin_price
 
     response = {'balance': total_bal}
+    # logger.info("Response sent for get use balance api request with data:: {}".format(json.dump(response)))
     return response
 
 
 @app.get("/bitcoin")
-async def fetch_bitcoin(crypto: Crypto):
+async def fetch_bitcoin():
     """Get bitcoin current price."""
     global cur
+    # logger.info("Request recieved for fetch bitcoin details api")
     bitcoin = cur.execute("SELECT price, updatedAt  FROM crypto WHERE name='bitcoin';").fetchone()
     response = {
         'price': bitcoin[0],
         'updatedAt': bitcoin[1]
     }
+    # logger.info("Response sent for fetch bitcoin details api request with data:: {}".format(json.dump(response)))
     return response
 
 
@@ -298,12 +329,13 @@ async def fetch_bitcoin(crypto: Crypto):
 async def update_bitcoin(crypto: Crypto):
     """Api to update bitcoin price."""
     global cur
+    # logger.info("Request recieved for update bitcoin details api with data:: price:{}".format(crypto.price))
     if crypto.price:
         price = crypto.price
     else:
         return {'status': False, 'code': 404, 'msg': 'Price field required.'}
     current_time = datetime.datetime.now().timestamp()
-    cur.execute(""" UPDATE crypto SET price, updatedAt=? WHERE name='bitcoin';""", (
+    cur.execute(""" UPDATE crypto SET price=?, updatedAt=? WHERE name='bitcoin';""", (
         price, current_time))
 
     # Save (commit) the changes.
@@ -313,4 +345,6 @@ async def update_bitcoin(crypto: Crypto):
         'price': bitcoin[0],
         'updatedAt': bitcoin[1]
     }
+    logger.info("Response sent for update bitcoin details api request with data:: {}".format(json.dump(response)))
+    return response
     return response
