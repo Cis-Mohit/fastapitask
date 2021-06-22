@@ -1,7 +1,7 @@
 # fastapitask
 
 # Project setup requirements
-- Python 3.7
+- Python 3.8
 
 # Setup steps 
 
